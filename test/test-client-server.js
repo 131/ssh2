@@ -10,6 +10,7 @@ var crypto = require('crypto');
 var path = require('path');
 var join = path.join;
 var inspect = require('util').inspect;
+var cp = require('child_process');
 var assert = require('assert');
 
 var t = -1;
@@ -922,17 +923,20 @@ var tests = [
       var server;
       var r;
       var out = '';
+      var agent;
+      var agent_sock = '/tmp/nodejs-ssh2-test-' + process.pid;
 
       r = setup(
         this,
         { username: USER,
           password: PASSWORD,
-          agent: '/foo/bar/baz'
+          agent: agent_sock,
         },
         { hostKeys: [HOST_KEY_RSA] }
       );
       client = r.client;
       server = r.server;
+      agent = cp.spawn('ssh-agent', ['-d', '-a', agent_sock]);
 
       server.on('connection', function(conn) {
         conn.on('authentication', function(ctx) {
@@ -951,7 +955,15 @@ var tests = [
               stream.write(inspect(authAgentReq));
               stream.exit(100);
               stream.end();
-              conn.end();
+
+              conn.openssh_authAgent(function(err, stream) {
+                assert(!err, makeMsg('Unexpected openssh_authAgent error: ' + err));
+                assert(stream.type === 'auth-agent@openssh.com',
+                  makeMsg('Unexpected openssh_authAgent channel type : ' + stream.type));
+
+                conn.end();
+                agent && agent.kill();
+              });
             });
           });
         });
